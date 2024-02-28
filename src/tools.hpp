@@ -1,16 +1,25 @@
+/*
+    https://github.com/burshlatt
+*/
+
 #ifndef CONSOLE_TOOLS_CONSOLE_TOOLS_HPP
 #define CONSOLE_TOOLS_CONSOLE_TOOLS_HPP
 
 #include <iostream>
 #include <filesystem>
+#include <type_traits>
 #include <string_view>
+#include <algorithm>
 #include <fstream>
 #include <string>
+#include <chrono>
+#include <random>
 #include <map>
 
 namespace fs = std::filesystem;
 
-namespace console_tools {
+namespace tools {
+namespace console {
 /*
     ANSI Escape Codes
 */
@@ -48,7 +57,7 @@ struct mods {
 };
 } // namespace ansi
 
-void console_clear() {
+void console_clear() noexcept {
     std::cout << ansi::mods::console_clear;
 }
 
@@ -57,7 +66,7 @@ void input_stream_clear() {
     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 }
 
-void print_text(std::string_view text, const char* color="", const char* mod="", std::string_view sep="\n") {
+void print_text(std::string_view text, const char* color="", const char* mod="", std::string_view sep="\n") noexcept {
     std::cout << mod << color << text << sep << ansi::mods::reset;
 }
 
@@ -78,6 +87,66 @@ int get_correct_int() {
     }
     return result;
 }
+} // namespace console
+
+namespace random {
+template <typename Iterator>
+void shuffle(Iterator begin, Iterator end) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::shuffle(begin, end, gen);
+}
+
+template <typename T>
+class generator {
+public:
+    using value_type = T;
+
+private:
+    using engine     = std::default_random_engine;
+    using duration   = std::chrono::_V2::system_clock::duration;
+    using time_point = std::chrono::_V2::system_clock::time_point;
+
+public:
+    generator() = delete;
+
+    explicit generator(value_type min, value_type max) {
+        if (std::is_same<value_type, int>::value)
+            range_int_ = std::make_unique<std::uniform_int_distribution<>>(min, max);
+        else if (std::is_same<value_type, float>::value)
+            range_real_ = std::make_unique<std::uniform_real_distribution<>>(min, max);
+        else if (std::is_same<value_type, double>::value)
+            range_real_ = std::make_unique<std::uniform_real_distribution<>>(min, max);
+        else
+            throw std::invalid_argument("Incorrect type");
+            
+        now_ = std::chrono::system_clock::now();
+        time_since_ = now_.time_since_epoch();
+        engine_ = std::make_unique<engine>(time_since_.count());
+    }
+
+    ~generator() = default;
+
+    value_type get_random_value() const {
+        if (std::is_same<value_type, int>::value)
+            return (*range_int_)(*engine_);
+        else if (std::is_same<value_type, float>::value)
+            return static_cast<float>((*range_real_)(*engine_));
+        else if (std::is_same<value_type, double>::value)
+            return (*range_real_)(*engine_);
+        else
+            throw std::invalid_argument("Incorrect type");
+        return value_type();
+    }
+
+private:
+    time_point now_;
+    duration time_since_;
+    std::unique_ptr<engine> engine_;
+    std::unique_ptr<std::uniform_int_distribution<>> range_int_;
+    std::unique_ptr<std::uniform_real_distribution<>> range_real_;
+};
+} // namespace random
 
 class time_monitoring {
 public:
@@ -94,7 +163,7 @@ public:
         this->end_point_ = std::chrono::system_clock::now();
     }
 
-    std::size_t get_time_offset() {
+    std::size_t get_time_offset() const {
         if (this->start_point_ == time_type()) {
             throw std::out_of_range("Time.err(): missing start point");
             return -1;
@@ -112,14 +181,14 @@ public:
     }
 
 private:
-    time_type start_point_;
-    time_type end_point_;
+    mutable time_type start_point_;
+    mutable time_type end_point_;
 };
 
 class filesystem_monitoring {
 public:
-    using mod = ansi::mods;
-    using color = ansi::colors;
+    using mod = console::ansi::mods;
+    using color = console::ansi::colors;
 
     filesystem_monitoring() = default;
     ~filesystem_monitoring() = default;
@@ -127,31 +196,31 @@ public:
     std::string get_file_path() const {
         fs::path path(fs::current_path());
         while (true) {
-            console_clear();
+            console::console_clear();
             int num{1};
             std::map<std::string, std::pair<bool, std::string>> dirs;
-            print_text("DIRS / FILES:\n", color::blue, mod::bold);
+            console::print_text("DIRS / FILES:\n", color::blue, mod::bold);
 
             for (const auto& entry : fs::directory_iterator(path.generic_string())) {
                 if (entry.is_directory()) {
-                    print_text(std::to_string(num) + ".", color::red, "", " ");
-                    print_text("(Dir)", color::blue, mod::bold, "\t");
+                    console::print_text(std::to_string(num) + ".", color::red, "", " ");
+                    console::print_text("(Dir)", color::blue, mod::bold, "\t");
                     dirs[std::to_string(num)] = { true, entry.path().filename().generic_string() };
                 } else {
-                    print_text(std::to_string(num) + ".", color::red, "", " ");
-                    print_text("(File)", color::green, mod::bold, "\t");
+                    console::print_text(std::to_string(num) + ".", color::red, "", " ");
+                    console::print_text("(File)", color::green, mod::bold, "\t");
                     dirs[std::to_string(num)] = { false, entry.path().filename().generic_string() };
                 }
-                print_text(entry.path().filename().generic_string());
+                console::print_text(entry.path().filename().generic_string());
                 num++;
             }
 
-            print_text("\nCURRENT_DIR: ", color::red, mod::bold, " ");
-            print_text(path.generic_string(), color::blue, mod::bold, "\n\n");
-            print_text("b. BACK", color::red, mod::bold);
-            print_text("c. CREATE FILE", color::red, mod::bold);
-            print_text("0. EXIT\n", color::red, mod::bold);
-            print_text("Select menu item:", color::green, "", " ");
+            console::print_text("\nCURRENT_DIR: ", color::red, mod::bold, " ");
+            console::print_text(path.generic_string(), color::blue, mod::bold, "\n\n");
+            console::print_text("b. BACK", color::red, mod::bold);
+            console::print_text("c. CREATE FILE", color::red, mod::bold);
+            console::print_text("0. EXIT\n", color::red, mod::bold);
+            console::print_text("Select menu item:", color::green, "", " ");
 
             std::string opt;
             std::cin >> opt;
@@ -161,7 +230,7 @@ public:
                 path = path.parent_path();
             } else if (opt == "c") {
                 std::string filename;
-                print_text("\nEnter filename: ", color::blue, "", " ");
+                console::print_text("\nEnter filename: ", color::blue, "", " ");
                 std::cin >> filename;
                 std::ofstream file(path / filename, std::ios::out);
                 file.close();
@@ -171,7 +240,7 @@ public:
                 path = path / name;
                 if (!is_dir) {
                     if (!fs::exists(path.generic_string())) {
-                        print_text("The file does not exist", color::red, "", " ");
+                        console::print_text("The file does not exist", color::red, "", " ");
                         continue;
                     }
                     return path.generic_string();
