@@ -2,8 +2,8 @@
     https://github.com/burshlatt
 */
 
-#ifndef CONSOLE_TOOLS_CONSOLE_TOOLS_HPP
-#define CONSOLE_TOOLS_CONSOLE_TOOLS_HPP
+#ifndef TOOLS_TOOLS_HPP
+#define TOOLS_TOOLS_HPP
 
 #include <iostream>
 #include <filesystem>
@@ -252,4 +252,4 @@ public:
 };
 } // namespace console_tools
 
-#endif // CONSOLE_TOOLS_CONSOLE_TOOLS_HPP
+#endif // TOOLS_TOOLS_HPP
