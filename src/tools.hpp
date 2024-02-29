@@ -10,7 +10,9 @@
 #include <type_traits>
 #include <string_view>
 #include <algorithm>
+#include <stdexcept>
 #include <fstream>
+#include <cstring>
 #include <string>
 #include <chrono>
 #include <random>
@@ -51,14 +53,14 @@ struct mods {
     static constexpr const char* reverse{"\x1b[7m"};
     static constexpr const char* italics{"\x1b[3m"};
     static constexpr const char* underline{"\x1b[4m"};
-
-    static constexpr const char* reset{"\x1b[0m"};
-    static constexpr const char* console_clear{"\x1b[2J\x1b[H"};
 };
+
+static constexpr const char* reset{"\x1b[0m"};
+static constexpr const char* console_clear{"\x1b[2J\x1b[H"};
 } // namespace ansi
 
 void console_clear() noexcept {
-    std::cout << ansi::mods::console_clear;
+    std::cout << ansi::console_clear;
 }
 
 void input_stream_clear() {
@@ -67,7 +69,7 @@ void input_stream_clear() {
 }
 
 void print_text(std::string_view text, const char* color="", const char* mod="", std::string_view sep="\n") noexcept {
-    std::cout << mod << color << text << sep << ansi::mods::reset;
+    std::cout << mod << color << text << sep << ansi::reset;
 }
 
 int get_correct_int() {
@@ -99,10 +101,8 @@ void shuffle(Iterator begin, Iterator end) {
 
 template <typename T>
 class generator {
-public:
-    using value_type = T;
-
 private:
+    using value_type = T;
     using engine     = std::default_random_engine;
     using duration   = std::chrono::_V2::system_clock::duration;
     using time_point = std::chrono::_V2::system_clock::time_point;
@@ -127,6 +127,7 @@ public:
 
     ~generator() = default;
 
+public:
     value_type get_random_value() const {
         if (std::is_same<value_type, int>::value)
             return (*range_int_)(*engine_);
@@ -148,13 +149,17 @@ private:
 };
 } // namespace random
 
-class time_monitoring {
-public:
+namespace time {
+class monitoring {
+private:
+    using size_type = std::size_t;
     using time_type = std::chrono::_V2::system_clock::time_point;
 
-    time_monitoring() = default;
-    ~time_monitoring() = default;
+public:
+    monitoring() = default;
+    ~monitoring() = default;
 
+public:
     void set_start_point() {
         this->start_point_ = std::chrono::system_clock::now();
     }
@@ -163,6 +168,7 @@ public:
         this->end_point_ = std::chrono::system_clock::now();
     }
 
+public:
     std::size_t get_time_offset() const {
         if (this->start_point_ == time_type()) {
             throw std::out_of_range("Time.err(): missing start point");
@@ -184,43 +190,186 @@ private:
     mutable time_type start_point_;
     mutable time_type end_point_;
 };
+} // namespace time
 
-class filesystem_monitoring {
+namespace filesystem {
+class file_t {
+private:
+    using size_type        = std::size_t;
+    using path_reference   = const fs::path&;
+    using string_reference = const std::string&;
+
 public:
-    using mod = console::ansi::mods;
-    using color = console::ansi::colors;
+    file_t() :
+        path_(fs::current_path() / "temporary_file.txt")
+    {}
 
-    filesystem_monitoring() = default;
-    ~filesystem_monitoring() = default;
+    explicit file_t(path_reference path) {
+        set_path(path);
+    }
 
+    explicit file_t(string_reference text) : file_t() {
+        set_text(text);
+    }
+
+    explicit file_t(const char* text, size_type size) : file_t() {
+        set_text(text, size);
+    }
+
+    explicit file_t(path_reference path, string_reference text) {
+        set_path(path);
+        set_text(text);
+    }
+
+    explicit file_t(path_reference path, const char* text, size_type size) {
+        set_path(path);
+        set_text(text, size);
+    }
+
+    explicit file_t(path_reference path, const char* text) = delete;
+
+    ~file_t() = default;
+
+public:
+    void set_path(path_reference path) {
+        fs::path tmp_path{path};
+        tmp_path = tmp_path.remove_filename();
+        if (fs::exists(tmp_path)) {
+            path_ = path;
+            if (fs::is_directory(path))
+                path_ /= "temporary_file.txt";
+        }
+    }
+
+    void set_path(string_reference path) {
+        set_path(fs::path(path));
+    }
+
+    void set_text(string_reference text) {
+        text_ = text;
+        size_ = text.size();
+    }
+
+    void set_text(const char* text, size_type size) {
+        set_text(std::string(text, size));
+    }
+
+    void set_text(const char* text) = delete;
+
+public:
+    std::string get_text() const { return text_; }
+
+    fs::path get_path_fs() const { return path_; }
+
+    std::string get_path() const { return path_.generic_string(); }
+
+public:
+    char& operator[](int index) {
+        return text_[index];
+    }
+
+    char operator[](int index) const {
+        return text_[index];
+    }
+
+public:
+    [[nodiscard]] std::size_t size() const noexcept { return size_; }
+
+private:
+    std::size_t size_{};
+    std::string text_;
+    fs::path path_;
+};
+
+class monitoring {
+private:
+    using size_type = std::size_t;
+    using mod       = console::ansi::mods;
+    using color     = console::ansi::colors;
+    using path_reference   = const fs::path&;
+    using string_reference = const std::string&;
+
+public:
+    monitoring() = default;
+    ~monitoring() = default;
+
+public:
+    file_t read_file(path_reference path) const {
+        if (!fs::exists(path) || fs::is_directory(path))
+            return file_t();
+
+        std::ifstream file_stream(path, std::ios::binary | std::ios::in);
+        std::unique_ptr<char[]> buffer;
+        std::size_t file_size{};
+
+        if (file_stream.is_open()) {
+            file_stream.seekg(0, std::ios::end);
+            file_size = file_stream.tellg();
+            file_stream.seekg(0, std::ios::beg);
+            buffer = std::make_unique<char[]>(file_size);
+            file_stream.read(buffer.get(), file_size);
+        } else {
+            std::string error_text{"Error: Cannot open file: "};
+            std::string filename{path.filename().generic_string()};
+            throw std::ios_base::failure(error_text + filename);
+        }
+
+        file_t new_file(path, buffer.get(), file_size);
+
+        return new_file;
+    }
+
+    file_t read_file(string_reference path) const {
+        return read_file(fs::path(path));
+    }
+
+    void read_file(file_t& file) const {
+        file = read_file(file.get_path_fs());
+    }
+
+    void create_file(path_reference path) const {
+        fs::path tmp_path(path);
+        tmp_path = tmp_path.remove_filename();
+        if (fs::exists(tmp_path)) {
+            fs::path new_file{path};
+            if (fs::is_directory(path))
+                new_file /= "temporary_file.txt";
+
+            std::ofstream file_stream(new_file, std::ios::out);
+
+            if (!file_stream.is_open()) {
+                std::string error_text{"Error: Cannot create file: "};
+                std::string filename{new_file.filename().generic_string()};
+                throw std::ios_base::failure(error_text + filename);
+            }
+        }
+    }
+
+    void create_file(string_reference file_path) const {
+        create_file(fs::path(file_path));
+    }
+
+    void create_file(const file_t& file) const {
+        fs::path path(file.get_path_fs());
+        std::ofstream file_stream(path, std::ios::out);
+
+        if (file_stream.is_open()) {
+            file_stream << file.get_text();
+        } else {
+            std::string error_text{"Error: Cannot create file: "};
+            std::string filename{path.filename().generic_string()};
+            throw std::ios_base::failure(error_text + filename);
+        }
+    }
+
+public:
     std::string get_file_path() const {
         fs::path path(fs::current_path());
         while (true) {
-            console::console_clear();
-            int num{1};
-            std::map<std::string, std::pair<bool, std::string>> dirs;
-            console::print_text("DIRS / FILES:\n", color::blue, mod::bold);
+            std::string path_str{path.generic_string()};
 
-            for (const auto& entry : fs::directory_iterator(path.generic_string())) {
-                if (entry.is_directory()) {
-                    console::print_text(std::to_string(num) + ".", color::red, "", " ");
-                    console::print_text("(Dir)", color::blue, mod::bold, "\t");
-                    dirs[std::to_string(num)] = { true, entry.path().filename().generic_string() };
-                } else {
-                    console::print_text(std::to_string(num) + ".", color::red, "", " ");
-                    console::print_text("(File)", color::green, mod::bold, "\t");
-                    dirs[std::to_string(num)] = { false, entry.path().filename().generic_string() };
-                }
-                console::print_text(entry.path().filename().generic_string());
-                num++;
-            }
-
-            console::print_text("\nCURRENT_DIR: ", color::red, mod::bold, " ");
-            console::print_text(path.generic_string(), color::blue, mod::bold, "\n\n");
-            console::print_text("b. BACK", color::red, mod::bold);
-            console::print_text("c. CREATE FILE", color::red, mod::bold);
-            console::print_text("0. EXIT\n", color::red, mod::bold);
-            console::print_text("Select menu item:", color::green, "", " ");
+            print_filesystem(path_str);
+            print_menu(path_str);
 
             std::string opt;
             std::cin >> opt;
@@ -229,27 +378,61 @@ public:
             } else if (opt == "b") {
                 path = path.parent_path();
             } else if (opt == "c") {
-                std::string filename;
                 console::print_text("\nEnter filename: ", color::blue, "", " ");
+                std::string filename;
                 std::cin >> filename;
-                std::ofstream file(path / filename, std::ios::out);
-                file.close();
+                create_file(path / filename);
                 continue;
-            } else if (dirs.find(opt) != dirs.end()) {
-                auto [is_dir, name]{dirs[opt]};
-                path = path / name;
+            } else if (dirs_.find(opt) != dirs_.end()) {
+                auto [is_dir, name]{dirs_[opt]};
+                path /= name;
+
                 if (!is_dir) {
-                    if (!fs::exists(path.generic_string())) {
+                    path_str = path.generic_string();
+                    if (!fs::exists(path_str)) {
                         console::print_text("The file does not exist", color::red, "", " ");
                         continue;
                     }
-                    return path.generic_string();
+                    return path_str;
                 }
             }
         }
         return "";
     }
+
+private:
+    void print_filesystem(std::string_view path) const {
+        console::console_clear();
+        console::print_text("DIRS / FILES:\n", color::blue, mod::bold);
+        int num{1};
+        for (const auto& entry : fs::directory_iterator(path)) {
+            if (entry.is_directory()) {
+                console::print_text(std::to_string(num) + ".", color::red, "", " ");
+                console::print_text("(Dir)", color::blue, mod::bold, "\t");
+                dirs_[std::to_string(num)] = { true, entry.path().filename().generic_string() };
+            } else {
+                console::print_text(std::to_string(num) + ".", color::red, "", " ");
+                console::print_text("(File)", color::green, mod::bold, "\t");
+                dirs_[std::to_string(num)] = { false, entry.path().filename().generic_string() };
+            }
+            console::print_text(entry.path().filename().generic_string());
+            num++;
+        }
+    }
+
+    void print_menu(std::string_view path) const noexcept {
+        console::print_text("\nCURRENT_DIR: ", color::red, mod::bold, " ");
+        console::print_text(path, color::blue, mod::bold, "\n\n");
+        console::print_text("b. BACK", color::red, mod::bold);
+        console::print_text("c. CREATE FILE", color::red, mod::bold);
+        console::print_text("0. EXIT\n", color::red, mod::bold);
+        console::print_text("Select menu item:", color::green, "", " ");
+    }
+
+private:
+    mutable std::map<std::string, std::pair<bool, std::string>> dirs_;
 };
+} // namespace filesystem
 } // namespace console_tools
 
 #endif // TOOLS_TOOLS_HPP
