@@ -1,5 +1,5 @@
 /*
-    Author: https://github.com/burshlatt
+    Author:  https://github.com/burshlatt
     Project: https://github.com/burshlatt/CPP_tools
 */
 
