@@ -16,6 +16,7 @@
 #include <string>
 #include <chrono>
 #include <random>
+#include <limits>
 #include <map>
 
 namespace fs = std::filesystem;
@@ -100,52 +101,74 @@ void shuffle(Iterator begin, Iterator end) {
 }
 
 template <typename T>
-class generator {
-private:
-    using value_type = T;
-    using engine     = std::default_random_engine;
-    using duration   = std::chrono::_V2::system_clock::duration;
-    using time_point = std::chrono::_V2::system_clock::time_point;
-
+class generator_int {
 public:
-    generator() = delete;
+    generator_int() :
+        generator_int(std::numeric_limits<T>::min(), std::numeric_limits<T>::max())
+    {}
 
-    explicit generator(value_type min, value_type max) {
-        if (std::is_same<value_type, int>::value)
-            range_int_ = std::make_unique<std::uniform_int_distribution<>>(min, max);
-        else if (std::is_same<value_type, float>::value)
-            range_real_ = std::make_unique<std::uniform_real_distribution<>>(min, max);
-        else if (std::is_same<value_type, double>::value)
-            range_real_ = std::make_unique<std::uniform_real_distribution<>>(min, max);
-        else
+    explicit generator_int(T min, T max) {
+        if (!std::is_integral<T>::value)
             throw std::invalid_argument("Incorrect type");
-            
-        now_ = std::chrono::system_clock::now();
-        time_since_ = now_.time_since_epoch();
-        engine_ = std::make_unique<engine>(time_since_.count());
+
+        if (min > max)
+            throw std::invalid_argument("Incorrect argument");
+
+        if (sizeof(T) <= sizeof(std::mt19937::result_type))
+            gen32_ = std::make_unique<std::mt19937>(rd_());
+        else
+            gen64_ = std::make_unique<std::mt19937_64>(rd_());
+
+        distribution_ = std::make_unique<std::uniform_int_distribution<T>>(min, max);
     }
 
-    ~generator() = default;
+    ~generator_int() = default;
 
 public:
-    value_type get_random_value() const {
-        if (std::is_same<value_type, int>::value)
-            return (*range_int_)(*engine_);
-        else if (std::is_same<value_type, float>::value)
-            return static_cast<float>((*range_real_)(*engine_));
-        else if (std::is_same<value_type, double>::value)
-            return (*range_real_)(*engine_);
+    T get_random_value() const {
+        if (sizeof(T) <= sizeof(std::mt19937::result_type))
+            return (*distribution_)(*gen32_);
         else
-            throw std::invalid_argument("Incorrect type");
-        return value_type();
+            return (*distribution_)(*gen64_);
     }
 
 private:
-    time_point now_;
-    duration time_since_;
-    std::unique_ptr<engine> engine_;
-    std::unique_ptr<std::uniform_int_distribution<>> range_int_;
-    std::unique_ptr<std::uniform_real_distribution<>> range_real_;
+    std::random_device rd_;
+    std::unique_ptr<std::mt19937> gen32_;
+    std::unique_ptr<std::mt19937_64> gen64_;
+    std::unique_ptr<std::uniform_int_distribution<T>> distribution_;
+};
+
+template <typename T>
+class generator_real {
+public:
+    generator_real() :
+        generator_real(std::numeric_limits<T>::min(), std::numeric_limits<T>::max())
+    {}
+
+    explicit generator_real(T min, T max) {
+        if (!std::is_floating_point<T>::value)
+            throw std::invalid_argument("Incorrect type");
+
+        if (min > max)
+            throw std::invalid_argument("Incorrect argument");
+
+        gen32_ = std::make_unique<std::mt19937>(rd_());
+
+        distribution_ = std::make_unique<std::uniform_real_distribution<T>>(min, max);
+    }
+
+    ~generator_real() = default;
+
+public:
+    T get_random_value() const {
+        return (*distribution_)(*gen32_);
+    }
+
+private:
+    std::random_device rd_;
+    std::unique_ptr<std::mt19937> gen32_;
+    std::unique_ptr<std::uniform_real_distribution<T>> distribution_;
 };
 } // namespace random
 
@@ -204,7 +227,7 @@ public:
         path_(fs::current_path() / "temporary_file.txt")
     {}
 
-    explicit file_t(path_reference path) {
+    explicit file_t(path_reference path) : file_t() {
         set_path(path);
     }
 
@@ -216,12 +239,12 @@ public:
         set_text(text, size);
     }
 
-    explicit file_t(path_reference path, string_reference text) {
+    explicit file_t(path_reference path, string_reference text) : file_t() {
         set_path(path);
         set_text(text);
     }
 
-    explicit file_t(path_reference path, const char* text, size_type size) {
+    explicit file_t(path_reference path, const char* text, size_type size) : file_t() {
         set_path(path);
         set_text(text, size);
     }
@@ -245,6 +268,10 @@ public:
         set_path(fs::path(path));
     }
 
+    void set_filename(string_reference name) {
+        path_.replace_filename(fs::path(name));
+    }
+
     void set_text(string_reference text) {
         text_ = text;
         size_ = text.size();
@@ -263,6 +290,12 @@ public:
 
     std::string get_path() const { return path_.generic_string(); }
 
+    fs::path get_dir_fs() const { return path_.parent_path(); }
+
+    std::string get_dir() const { return path_.parent_path().generic_string(); }
+
+    std::string get_filename() const { return path_.filename().generic_string(); }
+
 public:
     char& operator[](int index) {
         return text_[index];
@@ -273,7 +306,13 @@ public:
     }
 
 public:
-    [[nodiscard]] std::size_t size() const noexcept { return size_; }
+    std::size_t size() const noexcept { return size_; }
+
+    bool empty() const noexcept { return !size_; }
+
+    bool exists() const noexcept {
+        return fs::exists(path_) && !fs::is_directory(path_);
+    }
 
 private:
     std::size_t size_{};
@@ -314,9 +353,7 @@ public:
             throw std::ios_base::failure(error_text + filename);
         }
 
-        file_t new_file(path, buffer.get(), file_size);
-
-        return new_file;
+        return file_t(path, buffer.get(), file_size);
     }
 
     file_t read_file(string_reference path) const {
@@ -327,26 +364,19 @@ public:
         file = read_file(file.get_path_fs());
     }
 
-    void create_file(path_reference path) const {
-        fs::path tmp_path(path);
-        tmp_path = tmp_path.remove_filename();
-        if (fs::exists(tmp_path)) {
-            fs::path new_file{path};
-            if (fs::is_directory(path))
-                new_file /= "temporary_file.txt";
+    void write_file(path_reference path, std::string_view text) const {
+        if (!fs::exists(path) || fs::is_directory(path))
+            return;
 
-            std::ofstream file_stream(new_file, std::ios::out);
+        std::ofstream file_stream(path, std::ios::app);
 
-            if (!file_stream.is_open()) {
-                std::string error_text{"Error: Cannot create file: "};
-                std::string filename{new_file.filename().generic_string()};
-                throw std::ios_base::failure(error_text + filename);
-            }
+        if (file_stream.is_open()) {
+            file_stream << text;
+        } else {
+            std::string error_text{"Error: Cannot open file: "};
+            std::string filename{path.filename().generic_string()};
+            throw std::ios_base::failure(error_text + filename);
         }
-    }
-
-    void create_file(string_reference file_path) const {
-        create_file(fs::path(file_path));
     }
 
     void create_file(const file_t& file) const {
@@ -362,6 +392,14 @@ public:
         }
     }
 
+    void create_file(path_reference path) const {
+        create_file(file_t(path));
+    }
+
+    void create_file(string_reference path) const {
+        create_file(fs::path(path));
+    }
+
 public:
     std::string get_file_path() const {
         fs::path path(fs::current_path());
@@ -375,6 +413,8 @@ public:
             std::cin >> opt;
             if (opt == "0") {
                 break;
+            } else if (opt == "d") {
+                return path_str;
             } else if (opt == "b") {
                 path = path.parent_path();
             } else if (opt == "c") {
@@ -397,6 +437,7 @@ public:
                 }
             }
         }
+        
         return "";
     }
 
@@ -405,6 +446,7 @@ private:
         console::console_clear();
         console::print_text("DIRS / FILES:\n", color::blue, mod::bold);
         int num{1};
+        dirs_.clear();
         for (const auto& entry : fs::directory_iterator(path)) {
             if (entry.is_directory()) {
                 console::print_text(std::to_string(num) + ".", color::red, "", " ");
@@ -425,6 +467,7 @@ private:
         console::print_text(path, color::blue, mod::bold, "\n\n");
         console::print_text("b. BACK", color::red, mod::bold);
         console::print_text("c. CREATE FILE", color::red, mod::bold);
+        console::print_text("d. SELECT CURRENT DIRECTORY", color::red, mod::bold);
         console::print_text("0. EXIT\n", color::red, mod::bold);
         console::print_text("Select menu item:", color::green, "", " ");
     }
