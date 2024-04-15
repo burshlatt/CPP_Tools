@@ -115,10 +115,13 @@ public:
         if (min > max)
             throw std::invalid_argument("Incorrect argument");
 
-        if (sizeof(T) <= sizeof(std::mt19937::result_type))
-            gen32_ = std::make_unique<std::mt19937>(rd_());
-        else
-            gen64_ = std::make_unique<std::mt19937_64>(rd_());
+        std::random_device rd;
+
+        if (sizeof(T) <= sizeof(std::mt19937::result_type)) {
+            gen32_ = std::make_unique<std::mt19937>(rd());
+        } else {
+            gen64_ = std::make_unique<std::mt19937_64>(rd());
+        }
 
         distribution_ = std::make_unique<std::uniform_int_distribution<T>>(min, max);
     }
@@ -127,14 +130,14 @@ public:
 
 public:
     T get_random_value() const {
-        if (sizeof(T) <= sizeof(std::mt19937::result_type))
+        if (sizeof(T) <= sizeof(std::mt19937::result_type)) {
             return (*distribution_)(*gen32_);
-        else
+        } else {
             return (*distribution_)(*gen64_);
+        }
     }
 
 private:
-    std::random_device rd_;
     std::unique_ptr<std::mt19937> gen32_;
     std::unique_ptr<std::mt19937_64> gen64_;
     std::unique_ptr<std::uniform_int_distribution<T>> distribution_;
@@ -154,8 +157,9 @@ public:
         if (min > max)
             throw std::invalid_argument("Incorrect argument");
 
-        gen32_ = std::make_unique<std::mt19937>(rd_());
+        std::random_device rd;
 
+        gen32_ = std::make_unique<std::mt19937>(rd());
         distribution_ = std::make_unique<std::uniform_real_distribution<T>>(min, max);
     }
 
@@ -167,52 +171,28 @@ public:
     }
 
 private:
-    std::random_device rd_;
     std::unique_ptr<std::mt19937> gen32_;
     std::unique_ptr<std::uniform_real_distribution<T>> distribution_;
 };
 } // namespace random
 
 namespace time {
-class monitoring {
-private:
-    using size_type = std::size_t;
-    using time_type = std::chrono::_V2::system_clock::time_point;
-
+class timer {
 public:
-    monitoring() = default;
-    ~monitoring() = default;
+    explicit timer(std::ostream& out = std::cout) : 
+        stream_(out),
+        start_(std::chrono::high_resolution_clock::now())
+    {}
 
-public:
-    void set_start_point() {
-        this->start_point_ = std::chrono::system_clock::now();
-    }
-
-    void set_end_point() {
-        this->end_point_ = std::chrono::system_clock::now();
-    }
-
-public:
-    std::size_t get_time_offset() const {
-        if (this->start_point_ == time_type()) {
-            throw std::out_of_range("Time.err(): missing start point");
-            return -1;
-        } else if (this->end_point_ == time_type()) {
-            throw std::out_of_range("Time.err(): missing end point");
-            return -1;
-        }
-        auto seconds_end{std::chrono::time_point_cast<std::chrono::seconds>(this->end_point_)};
-        auto seconds_start{std::chrono::time_point_cast<std::chrono::seconds>(this->start_point_)};
-        auto seconds_end_int{seconds_end.time_since_epoch().count()};
-        auto seconds_start_int{seconds_start.time_since_epoch().count()};
-        this->end_point_ = time_type();
-        this->start_point_ = time_type();
-        return seconds_end_int - seconds_start_int;
+    ~timer() {
+        auto end{std::chrono::high_resolution_clock::now()};
+        auto diff{std::chrono::duration_cast<std::chrono::microseconds>(end - start_)};
+        stream_ << "Time elapsed: " << diff.count() << " mcs." << "\n";
     }
 
 private:
-    mutable time_type start_point_;
-    mutable time_type end_point_;
+    std::ostream& stream_;
+    std::chrono::time_point<std::chrono::high_resolution_clock> start_;
 };
 } // namespace time
 
