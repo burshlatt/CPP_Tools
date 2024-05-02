@@ -29,36 +29,36 @@ namespace console {
 */
 namespace ansi {
 struct colors {
-    static constexpr const char* red{"\x1b[31m"};
-    static constexpr const char* blue{"\x1b[34m"};
-    static constexpr const char* cyan{"\x1b[36m"};
-    static constexpr const char* white{"\x1b[37m"};
-    static constexpr const char* black{"\x1b[30m"};
-    static constexpr const char* green{"\x1b[32m"};
-    static constexpr const char* yellow{"\x1b[33m"};
-    static constexpr const char* purple{"\x1b[35m"};
-    static constexpr const char* back_red{"\x1b[41m"};
-    static constexpr const char* back_blue{"\x1b[44m"};
-    static constexpr const char* back_cyan{"\x1b[46m"};
-    static constexpr const char* back_white{"\x1b[47m"};
-    static constexpr const char* back_black{"\x1b[40m"};
-    static constexpr const char* back_green{"\x1b[42m"};
-    static constexpr const char* back_yellow{"\x1b[43m"};
-    static constexpr const char* back_purple{"\x1b[45m"};
+    static constexpr char* red{"\x1b[31m"};
+    static constexpr char* blue{"\x1b[34m"};
+    static constexpr char* cyan{"\x1b[36m"};
+    static constexpr char* white{"\x1b[37m"};
+    static constexpr char* black{"\x1b[30m"};
+    static constexpr char* green{"\x1b[32m"};
+    static constexpr char* yellow{"\x1b[33m"};
+    static constexpr char* purple{"\x1b[35m"};
+    static constexpr char* back_red{"\x1b[41m"};
+    static constexpr char* back_blue{"\x1b[44m"};
+    static constexpr char* back_cyan{"\x1b[46m"};
+    static constexpr char* back_white{"\x1b[47m"};
+    static constexpr char* back_black{"\x1b[40m"};
+    static constexpr char* back_green{"\x1b[42m"};
+    static constexpr char* back_yellow{"\x1b[43m"};
+    static constexpr char* back_purple{"\x1b[45m"};
 };
 
 struct mods {
-    static constexpr const char* dim{"\x1b[2m"};
-    static constexpr const char* bold{"\x1b[1m"};
-    static constexpr const char* blink{"\x1b[5m"};
-    static constexpr const char* hidden{"\x1b[8m"};
-    static constexpr const char* reverse{"\x1b[7m"};
-    static constexpr const char* italics{"\x1b[3m"};
-    static constexpr const char* underline{"\x1b[4m"};
+    static constexpr char* dim{"\x1b[2m"};
+    static constexpr char* bold{"\x1b[1m"};
+    static constexpr char* blink{"\x1b[5m"};
+    static constexpr char* hidden{"\x1b[8m"};
+    static constexpr char* reverse{"\x1b[7m"};
+    static constexpr char* italics{"\x1b[3m"};
+    static constexpr char* underline{"\x1b[4m"};
 };
 
-static constexpr const char* reset{"\x1b[0m"};
-static constexpr const char* console_clear{"\x1b[2J\x1b[H"};
+static constexpr char* reset{"\x1b[0m"};
+static constexpr char* console_clear{"\x1b[2J\x1b[H"};
 } // namespace ansi
 
 void console_clear() noexcept {
